@@ -1,100 +1,52 @@
 package ciobs
 
+import (
+	"fmt"
+	"os"
+	"path"
+)
+
 type Task struct {
 	name         string
+	path         string
 	upTriggers   map[string]bool
 	downTriggers map[string]bool
 }
 
-func appendUnique(slice []string, s string) []string {
-	for _, ele := range slice {
-		if ele == s {
-			return slice
-		}
-	}
-	return append(slice, s)
-}
-
-func appendGraph(graph map[string][]string, k string, v string) {
-	var deps []string
-	if d, ok := graph[k]; ok {
-		deps = d
-	}
-	graph[k] = appendUnique(deps, v)
-}
-
-func normalizeDeps(tasks []*Task) map[string][]string {
-	graph := make(map[string][]string)
-
-	// Naive, but most likely okay
-	for _, task := range tasks {
-		for k, _ := range task.upTriggers {
-			appendGraph(graph, k, task.Name())
-		}
-		for k, _ := range task.downTriggers {
-			appendGraph(graph, task.Name(), k)
-		}
-		if _, ok := graph[task.Name()]; !ok {
-			graph[task.Name()] = make([]string, 0)
-		}
-	}
-
-	return graph
-}
-
-func topSort(g map[string][]string) (order, cyclic []string) {
-	L := make([]string, len(g))
-	i := len(L)
-	temp := map[string]bool{}
-	perm := map[string]bool{}
-	var cycleFound bool
-	var cycleStart string
-	var visit func(string)
-	visit = func(n string) {
-		switch {
-		case temp[n]:
-			cycleFound = true
-			cycleStart = n
-			return
-		case perm[n]:
-			return
-		}
-		temp[n] = true
-		for _, m := range g[n] {
-			visit(m)
-			if cycleFound {
-				if cycleStart > "" {
-					cyclic = append(cyclic, n)
-					if n == cycleStart {
-						cycleStart = ""
-					}
-				}
-				return
+func createDir(parentDir string, name string) error {
+	p := path.Join(parentDir, name)
+	_, e := os.Stat(p)
+	if e != nil {
+		if os.IsNotExist(e) {
+			// replacing e is okay since it was
+			// just a marker
+			if e := os.MkdirAll(p, 0700); e != nil {
+				return e
 			}
+			return nil
+		} else {
+			// unspecified error
+			// unlikely that we can succeed
+			return e
 		}
-		delete(temp, n)
-		perm[n] = true
-		i--
-		L[i] = n
+	} else {
+		// directory already exists
+		return nil
 	}
-	for n := range g {
-		if perm[n] {
-			continue
-		}
-		visit(n)
-		if cycleFound {
-			return nil, cyclic
-		}
-	}
-	return L, nil
 }
 
-func NewTask(name string) *Task {
+func NewTask(tasksDir string, name string) (*Task, error) {
+
+	if e := createDir(tasksDir, name); e != nil {
+		return nil, fmt.Errorf("task: unable to create task dir '%s', %s", name, e)
+	}
+
 	return &Task{
 		name:         name,
+		path:         tasksDir,
 		upTriggers:   make(map[string]bool),
 		downTriggers: make(map[string]bool),
-	}
+	}, nil
 }
 
 func (t *Task) Name() string {
